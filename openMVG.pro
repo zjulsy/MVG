@@ -7,7 +7,8 @@ SOURCES += \
     main_run.cpp \
     sfm_data_load_help.cpp \
     rotaion_help.cpp \
-    linear_constraint_help.cpp
+    linear_constraint_help.cpp \
+    test.cpp
 
 LIBS += \
     /usr/local/lib/lib*.a\
@@ -24,5 +25,6 @@ HEADERS += \
     camera_lsy.h \
     rotation_help.h \
     sfm_data_load_help.h \
-    linear_constraint_help.h
+    linear_constraint_help.h \
+    test.h
 

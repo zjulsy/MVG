@@ -1,4 +1,6 @@
 #include "linear_constraint_help.h"
+#include <Eigen/Geometry>
+
 
 void test_constraints(openMVG::rotation_averaging::RelativeRotations& relatives_R,
                       Hash_Map<IndexT, Mat3>& global_rotations,
@@ -95,6 +97,44 @@ void test_constraints(openMVG::rotation_averaging::RelativeRotations& relatives_
             }
         }
     }
+}
+
+
+void test_constraints2()
+{
+    std::random_device rd;  // 将用于获得随机数引擎的种子
+    std::mt19937 gen(rd()); // 以 rd() 播种的标准 mersenne_twister_engine
+    std::uniform_real_distribution<> dis(0, 1);
+
+    using namespace Eigen;
+    Vec3 pi = Eigen::VectorXd::Random(3);
+    Vec3 pj = Eigen::VectorXd::Random(3);
+
+    Vec3 ti = Eigen::VectorXd::Random(3);
+    Vec3 tj = Eigen::VectorXd::Random(3);
+
+    Matrix3d Rij;
+    Rij = AngleAxisd(dis(gen)*M_PI, Vector3d::UnitX())
+        * AngleAxisd(dis(gen)*M_PI,  Vector3d::UnitY())
+        * AngleAxisd(dis(gen)*M_PI, Vector3d::UnitZ());
+
+    Vec3 ti_r = Rij * ti;
+    Vec3 tx = tj - ti_r;
+
+    cout << pj.transpose() * tx.cross( pi ) << " ";
+
+    Vec v1(6), v2(6);
+    v1(0)   = pi(0)*( -pj(1)*Rij(2,0) + pj(2)*Rij(1,0) ) + pi(1)*( pj(0)*Rij(2,0) - pj(2)*Rij(0,0) ) + pi(2)*( -pj(0)*Rij(1,0) + pj(1)*Rij(0,0) );
+    v1(1) = pi(0)*( -pj(1)*Rij(2,1) + pj(2)*Rij(1,1) ) + pi(1)*( pj(0)*Rij(2,1) - pj(2)*Rij(0,1) ) + pi(2)*( -pj(0)*Rij(1,1) + pj(1)*Rij(0,1) );
+    v1(2) = pi(0)*( -pj(1)*Rij(2,2) + pj(2)*Rij(1,2) ) + pi(1)*( pj(0)*Rij(2,2) - pj(2)*Rij(0,2) ) + pi(2)*( -pj(0)*Rij(1,2) + pj(1)*Rij(0,2) );
+    v1(3)   = pi(1)*pj(2) - pi(2)*pj(1);
+    v1(4) = -pi(0)*pj(2) + pi(2)*pj(0);
+    v1(5) = pi(0)*pj(1) - pi(1)*pj(0);
+
+    v2 << ti, tj;
+
+    cout << v1.transpose() * v2 << endl;
+
 }
 
 
@@ -200,8 +240,8 @@ void get_linear_equation(vector<vector<double>>& A,
                     Rij = Rj * Ri.transpose();
                     pi = Rij * pi;
 
-                    pi.normalize();
-                    pj.normalize();
+//                    pi.normalize();
+//                    pj.normalize();
 
                     vector<double> row_A(3*global_rotations.size(), 0);
                     row_A[3*I]   = pi(0)*( -pj(1)*Rij(2,0) + pj(2)*Rij(1,0) ) + pi(1)*( pj(0)*Rij(2,0) - pj(2)*Rij(0,0) ) + pi(2)*( -pj(0)*Rij(1,0) + pj(1)*Rij(0,0) );
@@ -210,6 +250,18 @@ void get_linear_equation(vector<vector<double>>& A,
                     row_A[3*J]   = pi(1)*pj(2) - pi(2)*pj(1);
                     row_A[3*J+1] = -pi(0)*pj(2) + pi(2)*pj(0);
                     row_A[3*J+2] = pi(0)*pj(1) - pi(1)*pj(0);
+
+                    // normalize
+                    double sum = row_A[3*I] * row_A[3*I] + row_A[3*I+1] * row_A[3*I+1] + row_A[3*I+2] * row_A[3*I+2] +
+                              row_A[3*J] * row_A[3*J] + row_A[3*J+1] * row_A[3*J+1] + row_A[3*J+2] * row_A[3*J+2];
+                    row_A[3*I] /= sum;
+                    row_A[3*I+1] /= sum;
+                    row_A[3*I+2] /= sum;
+                    row_A[3*J] /= sum;
+                    row_A[3*J+1] /= sum;
+                    row_A[3*J+2] /= sum;
+
+
 
                     A.push_back(row_A);
                 }
@@ -224,4 +276,82 @@ void get_linear_equation(vector<vector<double>>& A,
     for(int i : num_points_per_img)
         cout << i << " ";
     cout << endl;
+}
+
+Mat directGetT(Hash_Map<Pair, RelativePose_Info>& relativePose_Infos_map, Hash_Map<IndexT, Mat3>& global_rotations, vector<double>& ts,
+               vector<Mat3>& vec_Rij, vector<Vec3>& vec_tij, vector< std::pair<int, int> >& vec_ij)
+{
+    vector<vector<double>> A;
+
+    for(auto& it : relativePose_Infos_map)
+    {
+        Pair current_pair = it.first;
+        int i = current_pair.first;
+        int j= current_pair.second;
+
+        Vec3 tij = it.second.relativePose.translation();
+        Mat3 Rij = it.second.relativePose.rotation();
+
+        Mat3 Ri = global_rotations[i];
+        Mat3 Rj = global_rotations[j];
+        Mat3 Rot_To_Identity = Rij * Ri * Rj.transpose(); // motion composition
+
+        float angularErrorDegree = static_cast<float>(R2D(getRotationMagnitude(Rot_To_Identity)));
+        if(angularErrorDegree > 3)
+            continue;
+
+        Rij = Rj * Ri.transpose();
+        vec_Rij.push_back(Rij);
+        vec_tij.push_back(tij);
+        vec_ij.push_back( {i, j} );
+
+        vector<double> a1(ts.size(), 0);
+        a1[3*i] = -tij(1)*Rij(2, 0) + tij(2)*Rij(1, 0);
+        a1[3*i+1] = -tij(1)*Rij(2, 1) + tij(2)*Rij(1, 1);
+        a1[3*i+2] = -tij(1)*Rij(2, 2) + tij(2)*Rij(1, 2);
+
+        a1[3*j+1] = -tij(2);
+        a1[3*j+2] = tij[1];
+
+        vector<double> a2(ts.size(), 0);
+        a2[3*i] = tij(0)*Rij(2, 0) - tij(2)*Rij(0, 0);
+        a2[3*i+1] = tij(0)*Rij(2, 1) - tij(2)*Rij(0, 1);
+        a2[3*i+2] = tij(0)*Rij(2, 2) - tij(2)*Rij(0, 2);
+
+        a2[3*j] = tij(2);
+        a2[3*j+2] = -tij[0];
+
+        vector<double> a3(ts.size(), 0);
+        a3[3*i] = -tij(0)*Rij(1, 0) + tij(1)*Rij(0, 0);
+        a3[3*i+1] = -tij(0)*Rij(1, 1) + tij(1)*Rij(0, 1);
+        a3[3*i+2] = -tij(0)*Rij(1, 2) + tij(1)*Rij(0, 2);
+
+        a3[3*j] = -tij(1);
+        a3[3*j+1] = tij[0];
+
+
+        A.push_back(a1);
+        A.push_back(a2);
+        A.push_back(a3);
+    }
+
+    // Ax = 0, t0 = (0,0,0)
+    Mat A_eigen(A.size(), A[0].size()-3);
+    for(int r=0; r<A.size(); ++r)
+        for(int c=0; c<A[0].size()-3; ++c)
+        {
+            A_eigen(r, c) = A[r][c+3];
+        }
+    for(int i=0; i<A_eigen.rows(); ++i)
+    {
+        A_eigen.row(i).normalize();
+    }
+
+    Eigen::JacobiSVD<Mat> svd( A_eigen, Eigen::ComputeFullV );
+    Vec nullspace = svd.matrixV().col( A_eigen.cols() - 1 );
+
+    for(int i=0; i<ts.size()-3; ++i)
+        ts[i+3] = nullspace(i);
+
+    return A_eigen;
 }

@@ -50,4 +50,8 @@ void get_linear_equation(vector<vector<double>>& A,
                          SfM_Data& sfm_data,
                          std::shared_ptr<Features_Provider>& feats_provider,
                          std::shared_ptr<Matches_Provider> &matches_provider);
+
+void test_constraints2();
+
+Mat directGetT(Hash_Map<Pair, RelativePose_Info>& relativePose_Infos_map, Hash_Map<IndexT, Mat3>& global_rotations, vector<double>& ts,  vector<Mat3>& vec_Rij, vector<Vec3>& vec_tij, vector< std::pair<int, int> >& vec_ij);
 #endif // LINEAR_CONSTRAINT_HELP_H
